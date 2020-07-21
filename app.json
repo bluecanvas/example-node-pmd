@@ -1,0 +1,38 @@
+{
+  "name": "example-node-slack",
+  "description": "Example Slack integration using the Blue Canvas Node.js SDK",
+  "repository": "https://github.com/bluecanvas/example-node-slack",
+  "env": {
+    "BLUECANVAS_BASE_URL": {
+      "description": "",
+      "value": ""
+    },
+    "BLUECANVAS_CLIENT_ID": {
+      "description": "",
+      "value": ""
+    },
+    "BLUECANVAS_CLIENT_SECRET": {
+      "description": "",
+      "value": ""
+    },
+    "BLUECANVAS_TENANT_ID": {
+      "description": "",
+      "value": ""
+    },
+    "BLUECANVAS_REPO_ID": {
+      "description": "",
+      "value": ""
+    },
+    "BLUECANVAS_TOKEN_AUDIENCE": {
+      "description": "",
+      "value": ""
+    },
+    "BLUECANVAS_TOKEN_AUDIENCE": {
+      "description": "",
+      "value": ""
+    }
+  },
+  "scripts": {
+    "postdeploy": "./postdeploy.bash"
+  }
+}
