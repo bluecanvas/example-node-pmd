@@ -1,0 +1,21 @@
+{
+  "name": "example-node-pmd",
+  "version": "0.1.0",
+  "author": "https://bluecanvas.io",
+  "engines": {
+    "node": ">= 12.0.0"
+  },
+  "scripts": {},
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bluecanvas/example-node-pmd.git"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@bluecanvas/sdk": "1.2.1",
+    "@hapi/hapi": "^19.1.1",
+    "rimraf": "3.0.2",
+    "tar": "6.0.2",
+    "uuid": "8.3.0"
+  }
+}
