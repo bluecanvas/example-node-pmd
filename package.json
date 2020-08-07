@@ -5,7 +5,9 @@
   "engines": {
     "node": ">= 12.0.0"
   },
-  "scripts": {},
+  "scripts": {
+    "start": "node src/server.js"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/bluecanvas/example-node-pmd.git"
