@@ -46,10 +46,20 @@ const main = async () => {
     process.exit(1);
   }
 
-  const bluecanvas = new bluecanvasSdk.Client({
+  let clientOptions = {
     clientId: process.env.BLUECANVAS_CLIENT_ID,
     clientSecret: process.env.BLUECANVAS_CLIENT_SECRET,
-  });
+  }
+
+  if (process.env.BLUECANVAS_BASE_URL) {
+    clientOptions['baseUrl'] = process.env.BLUECANVAS_BASE_URL;
+  }
+
+  if (process.env.TOKEN_URL) {
+    clientOptions['tokenUrl'] = process.env.TOKEN_URL;
+  }
+
+  const bluecanvas = new bluecanvasSdk.Client(clientOptions);
 
   const server = new Hapi.Server({
     port: process.env.PORT,
