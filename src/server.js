@@ -5,12 +5,9 @@ const path = require('path');
 const tar = require('tar');
 const { v4: uuidv4 } = require('uuid');
 
-const bluecanvasSdk = require('@bluecanvas/sdk');
+const sdk = require('@bluecanvas/sdk');
 const Hapi = require('@hapi/hapi');
 const rimraf = require('rimraf');
-
-const { CheckResult, CheckState } = bluecanvasSdk;
-
 
 /**
  * PMD results stored in-memory to serve the example.
@@ -46,28 +43,43 @@ const main = async () => {
     process.exit(1);
   }
 
+  /*
+   * Initialize Blue Canvas SDK
+   */
   let clientOptions = {
     clientId: process.env.BLUECANVAS_CLIENT_ID,
     clientSecret: process.env.BLUECANVAS_CLIENT_SECRET,
+  };
+
+  if (process.env.TOKEN_URI) {
+    clientOptions['tokenUri'] = process.env.TOKEN_URI;
   }
 
-  if (process.env.BLUECANVAS_BASE_URL) {
-    clientOptions['baseUrl'] = process.env.BLUECANVAS_BASE_URL;
-  }
+  const bluecanvas = new sdk.Client(clientOptions);
 
-  if (process.env.TOKEN_URL) {
-    clientOptions['tokenUrl'] = process.env.TOKEN_URL;
-  }
-
-  const bluecanvas = new bluecanvasSdk.Client(clientOptions);
-
+  /*
+   * Initialize web server
+   */
   const server = new Hapi.Server({
     port: process.env.PORT,
-    debug: {request: ['error']},
+    debug: { log: '*', request: '*' },
   });
 
-  server.events.on('request', req => console.log(req.method.toUpperCase(), req.path));
+  server.events.on('log', msg => console.log(msg));
+  server.events.on('response', req => console.log(
+    "%s %s %s", req.method.toUpperCase(), req.path, req.response.statusCode));
 
+  server.route({
+    method: '*',
+    path: '/{p*}',
+    handler: async (req, h) => {
+      return h.response('The requested page was not found').code(404);
+    },
+  });
+
+  /**
+   * Add route to view PMD results
+   */
   server.route({
     method: 'GET',
     path: '/pmd-results/{id}',
@@ -80,20 +92,31 @@ const main = async () => {
     },
   });
 
+  /**
+   * Add route to handle webhook notifications
+   */
   await server.register({
-    plugin: bluecanvasSdk.EventHandlerPlugin,
+    plugin: sdk.EventHandlerPlugin,
     options: {
       tenantId: process.env.BLUECANVAS_TENANT_ID,
       onNotification: async (req, h, msg) => {
+        console.log(msg);
+
         if (
           msg.Event === 'deployments/validated' &&
           msg.Validation.state === 'DONE' &&
-          msg.Validation.result === 'SUCCEEDED' &&
-          // Apex changes.
+          msg.Validation.result === 'SUCCESS' &&
+          // This condition checks if the deployment request contains any
+          // files with a filename ending in '.cls', because we only want
+          // to run PMD if Apex code has changed:
           msg.Deployment.files.some(f => f.endsWith('.cls'))
         ) {
           console.log('Running PMD check...');
-          await runPmdCheck(bluecanvas, msg.Deployment.deploymentNumber, msg.Deployment.deploymentBranchName);
+          await runPmdCheck(
+            bluecanvas,
+            msg.Deployment.deploymentNumber,
+            msg.Deployment.deploymentBranchName
+          );
         }
 
         return '';
@@ -108,12 +131,14 @@ const main = async () => {
 const findRepoDirSync = (dirname, repoId) => {
   const isRepoDir = f => f.isDirectory() && f.name.startsWith(repoId);
   const files = fs.readdirSync(dirname, { withFileTypes: true });
-  const repoDir = files.filter(isRepoDir)[0].name;
-  return repoDir;
+  return files.filter(isRepoDir)[0].name;
 };
 
-
-const runPmdCheck = async (bluecanvas, deploymentNumber, deploymentBranchName) => {
+/**
+ * Executes PMD on the command-line and notifies Blue Canvas about progress
+ * via the Checks API.
+ */
+async function runPmdCheck(bluecanvas, deploymentNumber, deploymentBranchName) {
   const putCheck = async check => {
     await bluecanvas.deployments.putCheck({
       deploymentNumber,
@@ -122,27 +147,26 @@ const runPmdCheck = async (bluecanvas, deploymentNumber, deploymentBranchName) =
     });
   };
 
+  // Mark deployment check as in-progress
   await putCheck({
-    state: CheckState.IN_PROGRESS,
-    result: CheckResult.NEUTRAL,
+    state: 'IN_PROGRESS',
+    result: 'NEUTRAL',
     description: 'Starting...'
   });
 
+  // Fetch the files from Blue Canvas into a temporary folder
   const archive = await bluecanvas.archives.getTarGzipBlob({
     revision: deploymentBranchName
   });
 
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bluecanvas-pmd-'));
   process.chdir(tmpDir);
-
-  // Deployment branch names contain slashes.
-  const archName = deploymentBranchName.replace(/\//g, '-');
-  const archPath = path.join(tmpDir, `${archName}.tgz`);
-  fs.writeFileSync(archPath, archive.blob);
+  fs.writeFileSync('archive.tgz', archive.blob);
 
   try {
+    // Unpack files
     tar.x({
-      file: archPath,
+      file: 'archive.tgz',
       gzip: true,
       sync: true,
     });
@@ -150,21 +174,28 @@ const runPmdCheck = async (bluecanvas, deploymentNumber, deploymentBranchName) =
     const repoDir = findRepoDirSync('.', process.env.BLUECANVAS_REPO_ID);
 
     try {
-      const out = child_process.execFileSync(
-        path.join(process.env.PMD_HOME, 'bin', 'run.sh'), [
-          'pmd',
-          '-d', path.join(process.cwd(), repoDir, 'src'),
-          '-R', 'rulesets/apex/quickstart.xml'
-        ], {}
-      );
+      // Execute `pmd` command
+      const pmdBin = path.join(process.env.PMD_HOME, 'bin', 'run.sh');
+      child_process.execFileSync(pmdBin, [
+        'pmd',
+        '-d', path.join(process.cwd(), repoDir, 'src'),
+        '-R', 'rulesets/apex/quickstart.xml'
+      ], {});
+
     } catch (e) {
+      console.error(e);
+
+      // Save the error log
       const resultId = uuidv4();
-      const out = e.stdout.toString().trim();
+      const out = e.stdout
+        ? e.stdout.toString().trim()
+        : `${e}`;
       pmdResults.set(resultId, out);
 
+      // Mark deployment check as failure
       await putCheck({
-        state: CheckState.DONE,
-        result: CheckResult.FAILURE,
+        state: 'DONE',
+        result: 'FAILURE',
         description: 'Found some problems.',
         externalUrl: `${process.env.BASE_URL}/pmd-results/${resultId}`,
         externalId: resultId,
@@ -173,15 +204,17 @@ const runPmdCheck = async (bluecanvas, deploymentNumber, deploymentBranchName) =
       return;
     }
 
+    // Mark deployment check as success
     await putCheck({
-      state: CheckState.DONE,
-      result: CheckResult.SUCCESS,
+      state: 'DONE',
+      result: 'SUCCESS',
       description: 'No problems.'
     });
   } finally {
+    // Clean up temporary files
     rimraf.sync(tmpDir);
   }
-};
+}
 
 
 process.on('unhandledRejection', err => {

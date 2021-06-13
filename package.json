@@ -14,10 +14,10 @@
   },
   "license": "MIT",
   "dependencies": {
-    "@bluecanvas/sdk": "1.2.1",
-    "@hapi/hapi": "^19.1.1",
+    "@bluecanvas/sdk": "^2.1.1",
+    "@hapi/hapi": "^20.1.4",
     "rimraf": "3.0.2",
-    "tar": "6.0.2",
-    "uuid": "8.3.0"
+    "tar": "6.1.0",
+    "uuid": "8.3.2"
   }
 }
